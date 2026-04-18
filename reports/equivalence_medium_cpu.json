@@ -1,0 +1,506 @@
+{
+  "generated_at": "2026-04-18T12:08:33",
+  "summary": {
+    "total": 52,
+    "failed": 0,
+    "passed": 52
+  },
+  "performance_summary": {
+    "cpp": {
+      "real_time_total_s": 1.1300000000000001,
+      "user_time_total_s": 0.9099999999999999
+    },
+    "torch": {
+      "real_time_total_s": 14.66,
+      "user_time_total_s": 32.13,
+      "torch_cpu_time_total_ms": 24229.0594,
+      "torch_gpu_time_total_ms": 0.0
+    }
+  },
+  "executions": [
+    {
+      "engine": "cpp",
+      "case": "0001-core-nosyn-medium_in",
+      "return_code": 0,
+      "real_time_s": 0.08,
+      "user_time_s": 0.04,
+      "sys_time_s": 0.01,
+      "torch_cpu_time_ms": null,
+      "torch_gpu_time_ms": null,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/cpp/0001-core-nosyn-medium_in/0001-core-nosyn-medium_in_1776485297254_out.h5"
+    },
+    {
+      "engine": "cpp",
+      "case": "0002-core-recurrent-medium_in",
+      "return_code": 0,
+      "real_time_s": 0.81,
+      "user_time_s": 0.71,
+      "sys_time_s": 0.02,
+      "torch_cpu_time_ms": null,
+      "torch_gpu_time_ms": null,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/cpp/0002-core-recurrent-medium_in/0002-core-recurrent-medium_in_1776485301106_out.h5"
+    },
+    {
+      "engine": "cpp",
+      "case": "0003-core-twopop-medium_in",
+      "return_code": 0,
+      "real_time_s": 0.24,
+      "user_time_s": 0.16,
+      "sys_time_s": 0.06,
+      "torch_cpu_time_ms": null,
+      "torch_gpu_time_ms": null,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/cpp/0003-core-twopop-medium_in/0003-core-twopop-medium_in_1776485308262_out.h5"
+    },
+    {
+      "engine": "python",
+      "case": "0001-core-nosyn-medium_in",
+      "return_code": 0,
+      "real_time_s": 3.74,
+      "user_time_s": 2.85,
+      "sys_time_s": 0.59,
+      "torch_cpu_time_ms": 312.5062999999999,
+      "torch_gpu_time_ms": 0.0,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/python/0001-core-nosyn-medium_in/0001-core-nosyn-medium_in_1776485300360_out.h5"
+    },
+    {
+      "engine": "python",
+      "case": "0002-core-recurrent-medium_in",
+      "return_code": 0,
+      "real_time_s": 6.3,
+      "user_time_s": 23.09,
+      "sys_time_s": 1.95,
+      "torch_cpu_time_ms": 20333.1059,
+      "torch_gpu_time_ms": 0.0,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/python/0002-core-recurrent-medium_in/0002-core-recurrent-medium_in_1776485307488_out.h5"
+    },
+    {
+      "engine": "python",
+      "case": "0003-core-twopop-medium_in",
+      "return_code": 0,
+      "real_time_s": 4.62,
+      "user_time_s": 6.19,
+      "sys_time_s": 0.82,
+      "torch_cpu_time_ms": 3583.4471999999996,
+      "torch_gpu_time_ms": 0.0,
+      "output_file": "/home/vullar/Studio/Playground/SpikeNet/reports/equivalence_medium_cpu/python/0003-core-twopop-medium_in/0003-core-twopop-medium_in_1776485312328_out.h5"
+    }
+  ],
+  "checks": [
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "CLI::Number of input files:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "CLI::Processing input file No.1 out of 1...",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "CLI::Data file name is:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "CLI::The planet earth is blue and there's nothing I can do.",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "CLI::exit_code",
+      "status": "PASS",
+      "detail": "cpp=0, py=0",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/config_filename/config_filename",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/run_away_killed/step",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/spike_hist_tot",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/num_spikes_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/num_ref_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/stats_V_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 2.5579538487363607e-13,
+      "max_rel": 3.654863863029956e-15
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/stats_V_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 3.047562202596055e-14,
+      "max_rel": 3.651585666404281e-11
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/stats_I_input_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 0.0,
+      "max_rel": 0.0
+    },
+    {
+      "case": "0001-core-nosyn-medium_in",
+      "path": "/pop_result_0/stats_I_input_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 0.0,
+      "max_rel": 0.0
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "CLI::Number of input files:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "CLI::Processing input file No.1 out of 1...",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "CLI::Data file name is:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "CLI::The planet earth is blue and there's nothing I can do.",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "CLI::exit_code",
+      "status": "PASS",
+      "detail": "cpp=0, py=0",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/config_filename/config_filename",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/run_away_killed/step",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/spike_hist_tot",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/num_spikes_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/num_ref_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/stats_V_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.1368683772161603e-13,
+      "max_rel": 1.9321385450453695e-15
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/stats_V_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.2789769243681803e-13,
+      "max_rel": 5.4907265605472135e-14
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/stats_I_input_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.9895196601282805e-13,
+      "max_rel": 2.4334036790965442e-15
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/pop_result_0/stats_I_input_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.9539925233402755e-14,
+      "max_rel": 5.761530205955005e-15
+    },
+    {
+      "case": "0002-core-recurrent-medium_in",
+      "path": "/syn_result_0/stats_I_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.9895196601282805e-13,
+      "max_rel": 2.4334036790965442e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "CLI::Number of input files:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "CLI::Processing input file No.1 out of 1...",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "CLI::Data file name is:",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "CLI::The planet earth is blue and there's nothing I can do.",
+      "status": "PASS",
+      "detail": "cpp=True, py=True",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "CLI::exit_code",
+      "status": "PASS",
+      "detail": "cpp=0, py=0",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/config_filename/config_filename",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/run_away_killed/step",
+      "status": "PASS",
+      "detail": "present in both outputs",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/spike_hist_tot",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/num_spikes_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/num_ref_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/stats_V_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.9895196601282805e-13,
+      "max_rel": 2.8352668050601654e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/stats_V_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.7208456881689926e-14,
+      "max_rel": 6.882212404789337e-12
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/stats_I_input_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.5543122344752192e-15,
+      "max_rel": 3.674330064657451e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_0/stats_I_input_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 2.220446049250313e-16,
+      "max_rel": 4.738423682132647e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/spike_hist_tot",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/num_spikes_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/num_ref_pop",
+      "status": "PASS",
+      "detail": "integer exact match",
+      "max_abs": null,
+      "max_rel": null
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/stats_V_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 2.2737367544323206e-13,
+      "max_rel": 3.256206650929627e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/stats_V_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.5987211554602254e-14,
+      "max_rel": 1.0
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/stats_I_input_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.7763568394002505e-15,
+      "max_rel": 2.8479466992535706e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/pop_result_1/stats_I_input_std",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 2.220446049250313e-15,
+      "max_rel": 3.986437658566708e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/syn_result_0/stats_I_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.7763568394002505e-15,
+      "max_rel": 2.8479466992535706e-15
+    },
+    {
+      "case": "0003-core-twopop-medium_in",
+      "path": "/syn_result_1/stats_I_mean",
+      "status": "PASS",
+      "detail": "allclose",
+      "max_abs": 1.5543122344752192e-15,
+      "max_rel": 3.674330064657451e-15
+    }
+  ]
+}

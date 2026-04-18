@@ -173,7 +173,7 @@ Confirmed working scope:
 3. Side-by-side equivalence checks against C++ for deterministic core cases (see `reports/equivalence/report.md`, 52/52 PASS).
 
 Known limitations (still require extension work if your workflow depends on them):
-1. Restart input files are not supported yet.
+1. Restart is currently a minimal core implementation (state import/export for core population/synapse dynamics); advanced branches are not covered yet.
 2. External-noise synapse path (`pop_ind_pre < 0`) is intentionally deferred.
 3. Advanced plasticity/learning branches and full high-fidelity sampling outputs are not yet implemented.
 4. Existing PBS scripts are still C++-oriented and need a Python launcher variant for full HPC replacement.

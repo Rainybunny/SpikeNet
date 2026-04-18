@@ -43,6 +43,23 @@ def validate_output(path: Path) -> None:
         assert "/syn_result_0/stats_I_mean" in h5
 
 
+def validate_restart(path: Path) -> None:
+    with h5py.File(path, "r") as h5:
+        assert "/Net/N_array" in h5
+        assert "/Net/dt" in h5
+        assert "/Net/step_tot" in h5
+        assert "/pops/pop0/V" in h5
+        assert "/pops/pop0/ref_step_left" in h5
+        assert "/syns/n_syns" in h5
+
+
+def _run_cli(repo_root: Path, input_h5: Path) -> subprocess.CompletedProcess[str]:
+    cmd = [sys.executable, "-m", "spikenet_py.cli", str(input_h5)]
+    proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
+    print(proc.stdout)
+    return proc
+
+
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix="spikenet_smoke_") as tmp_dir_str:
@@ -50,19 +67,48 @@ def main() -> int:
         input_h5 = tmp_dir / "0001-smoke_in.h5"
         make_minimal_input(input_h5)
 
-        cmd = [sys.executable, "-m", "spikenet_py.cli", str(input_h5)]
-        proc = subprocess.run(cmd, cwd=repo_root, capture_output=True, text=True)
-        print(proc.stdout)
+        proc = _run_cli(repo_root, input_h5)
         if proc.returncode != 0:
             print(proc.stderr)
             raise RuntimeError("smoke test run failed")
 
-        out_files = list(tmp_dir.glob("*_out.h5"))
+        out_files = sorted(tmp_dir.glob("*_out.h5"), key=lambda p: p.stat().st_mtime)
         if not out_files:
             raise RuntimeError("no output file generated")
 
-        validate_output(out_files[0])
-        print(f"Smoke test passed: {out_files[0]}")
+        validate_output(out_files[-1])
+
+        restart_files = sorted(tmp_dir.glob("*_restart.h5"), key=lambda p: p.stat().st_mtime)
+        if not restart_files:
+            raise RuntimeError("no restart file generated")
+        restart_file = restart_files[-1]
+        validate_restart(restart_file)
+
+        # Force a known post-restart state so the next run has deterministic first-step spikes.
+        with h5py.File(restart_file, "a") as h5:
+            h5["/pops/pop0/V"][...] = np.full((16,), -49.0, dtype=np.float64)
+            h5["/pops/pop0/ref_step_left"][...] = np.zeros((16,), dtype=np.int32)
+
+        proc_restart = _run_cli(repo_root, restart_file)
+        if proc_restart.returncode != 0:
+            print(proc_restart.stderr)
+            raise RuntimeError("restart smoke test run failed")
+
+        out_files_after_restart = sorted(tmp_dir.glob("*_out.h5"), key=lambda p: p.stat().st_mtime)
+        if len(out_files_after_restart) < 2:
+            raise RuntimeError("restart run did not generate a new output file")
+
+        restart_out = out_files_after_restart[-1]
+        validate_output(restart_out)
+        with h5py.File(restart_out, "r") as h5:
+            first_step_spikes = int(np.asarray(h5["/pop_result_0/num_spikes_pop"][()]).reshape(-1)[0])
+            if first_step_spikes != 16:
+                raise RuntimeError(
+                    f"restart state not applied as expected, first_step_spikes={first_step_spikes}, expected=16"
+                )
+
+        print(f"Smoke test passed (base): {out_files[-1]}")
+        print(f"Smoke test passed (restart): {restart_out}")
 
     return 0
 

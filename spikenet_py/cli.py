@@ -28,11 +28,6 @@ def main() -> int:
             had_error = True
             continue
 
-        if "restart" in path.name:
-            print("Restart input is not implemented yet in the Python migration scaffold.")
-            had_error = True
-            continue
-
         try:
             out_stem, _ = run_single_file(str(path), device=args.device)
             print(f"Input file No.{idx} out of {len(args.input_files)} processed.")

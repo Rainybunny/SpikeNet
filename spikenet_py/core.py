@@ -7,7 +7,7 @@ import h5py
 import numpy as np
 import torch
 
-from .config import PopulationConfig, SynapseConfig
+from .config import PopulationConfig, PopulationRestartState, SynapseConfig, SynapseRestartState
 
 
 @dataclass
@@ -21,7 +21,14 @@ class NeuronParams:
 
 
 class Population:
-    def __init__(self, cfg: PopulationConfig, dt: float, step_tot: int, device: torch.device) -> None:
+    def __init__(
+        self,
+        cfg: PopulationConfig,
+        dt: float,
+        step_tot: int,
+        device: torch.device,
+        restart_state: PopulationRestartState | None = None,
+    ) -> None:
         self.index = cfg.index
         self.n = cfg.size
         self.dt = dt
@@ -56,22 +63,40 @@ class Population:
         if cfg.init_p_fire is not None:
             self._set_initial_condition(cfg.init_r_v0, cfg.init_p_fire)
 
+        if restart_state is not None:
+            self._apply_restart_state(restart_state)
+
         self.i_leak = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
         self.i_input = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
         self.i_ampa = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
         self.i_gaba = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
         self.i_nmda = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
         self.i_ext = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self._zero_scalar = torch.zeros((), dtype=torch.float64, device=self.device)
 
         self.spikes_current = torch.empty((0,), dtype=torch.int64, device=self.device)
-        self.spike_hist_tot: list[int] = []
+        self.spike_hist_parts: list[torch.Tensor] = []
         self.num_spikes_pop: list[int] = []
-        self.num_ref_pop: list[int] = []
+        self.num_ref_pop_parts: list[torch.Tensor] = []
 
-        self.stats_v_mean: list[float] = []
-        self.stats_v_std: list[float] = []
-        self.stats_i_mean: list[float] = []
-        self.stats_i_std: list[float] = []
+        self.stats_v_mean: list[torch.Tensor] = []
+        self.stats_v_std: list[torch.Tensor] = []
+        self.stats_i_mean: list[torch.Tensor] = []
+        self.stats_i_std: list[torch.Tensor] = []
+
+    def _apply_restart_state(self, restart_state: PopulationRestartState) -> None:
+        v = np.asarray(restart_state.v, dtype=np.float64).reshape(-1)
+        if v.size != self.n:
+            raise ValueError(
+                f"Population {self.index}: restart V length {v.size} != N {self.n}"
+            )
+        ref = np.asarray(restart_state.ref_step_left, dtype=np.int64).reshape(-1)
+        if ref.size != self.n:
+            raise ValueError(
+                f"Population {self.index}: restart ref_step_left length {ref.size} != N {self.n}"
+            )
+        self.v = torch.tensor(v, dtype=torch.float64, device=self.device)
+        self.ref_step_left = torch.tensor(ref, dtype=torch.int64, device=self.device)
 
     def _set_initial_condition(self, r_v0: float | None, p_fire: float) -> None:
         local_r_v0 = 1.0 if r_v0 is None else float(r_v0)
@@ -102,11 +127,11 @@ class Population:
         spike_count = int(self.spikes_current.numel())
         self.num_spikes_pop.append(spike_count)
         if spike_count > 0:
-            self.spike_hist_tot.extend(self.spikes_current.detach().cpu().tolist())
+            self.spike_hist_parts.append(self.spikes_current.clone())
 
         refractory = self.ref_step_left > 0
         # Match C++ semantics: count refractory neurons before decrementing the counters.
-        self.num_ref_pop.append(int(refractory.sum().item()))
+        self.num_ref_pop_parts.append(refractory.sum(dtype=torch.int64))
         self.ref_step_left[refractory] -= 1
 
     def receive_current(self, current: torch.Tensor, pop_ind_pre: int, syn_type: int) -> None:
@@ -128,13 +153,11 @@ class Population:
         non_ref = self.ref_step_left == 0
         self.v[non_ref] += vdot[non_ref] * self.dt
 
-        self.stats_v_mean.append(float(self.v.mean().item()))
+        self.stats_v_mean.append(self.v.mean())
         # C++ uses sample variance (N-1) via Welford.
-        v_std = self.v.std(unbiased=True).item() if self.n > 1 else 0.0
-        self.stats_v_std.append(float(v_std))
-        self.stats_i_mean.append(float(self.i_input.mean().item()))
-        i_std = self.i_input.std(unbiased=True).item() if self.n > 1 else 0.0
-        self.stats_i_std.append(float(i_std))
+        self.stats_v_std.append(self.v.std(unbiased=True) if self.n > 1 else self._zero_scalar)
+        self.stats_i_mean.append(self.i_input.mean())
+        self.stats_i_std.append(self.i_input.std(unbiased=True) if self.n > 1 else self._zero_scalar)
 
     def pop_para_string(self) -> str:
         return (
@@ -147,15 +170,36 @@ class Population:
         )
 
     def write_results(self, group: h5py.Group) -> None:
-        group.create_dataset("spike_hist_tot", data=np.asarray(self.spike_hist_tot, dtype=np.int32))
+        if self.spike_hist_parts:
+            spike_hist_tot = torch.cat(self.spike_hist_parts).detach().cpu().numpy().astype(np.int32)
+        else:
+            spike_hist_tot = np.zeros((0,), dtype=np.int32)
+
+        if self.num_ref_pop_parts:
+            num_ref_pop = torch.stack(self.num_ref_pop_parts).detach().cpu().numpy().astype(np.int32)
+        else:
+            num_ref_pop = np.zeros((0,), dtype=np.int32)
+
+        if self.stats_v_mean:
+            stats_v_mean = torch.stack(self.stats_v_mean).detach().cpu().numpy().astype(np.float64)
+            stats_v_std = torch.stack(self.stats_v_std).detach().cpu().numpy().astype(np.float64)
+            stats_i_mean = torch.stack(self.stats_i_mean).detach().cpu().numpy().astype(np.float64)
+            stats_i_std = torch.stack(self.stats_i_std).detach().cpu().numpy().astype(np.float64)
+        else:
+            stats_v_mean = np.zeros((0,), dtype=np.float64)
+            stats_v_std = np.zeros((0,), dtype=np.float64)
+            stats_i_mean = np.zeros((0,), dtype=np.float64)
+            stats_i_std = np.zeros((0,), dtype=np.float64)
+
+        group.create_dataset("spike_hist_tot", data=spike_hist_tot)
         group.create_dataset("num_spikes_pop", data=np.asarray(self.num_spikes_pop, dtype=np.int32))
-        group.create_dataset("num_ref_pop", data=np.asarray(self.num_ref_pop, dtype=np.int32))
+        group.create_dataset("num_ref_pop", data=num_ref_pop)
         group.create_dataset("pop_para", data=np.asarray([self.pop_para_string()], dtype=h5py.string_dtype("utf-8")))
 
-        group.create_dataset("stats_V_mean", data=np.asarray(self.stats_v_mean, dtype=np.float64))
-        group.create_dataset("stats_V_std", data=np.asarray(self.stats_v_std, dtype=np.float64))
-        group.create_dataset("stats_I_input_mean", data=np.asarray(self.stats_i_mean, dtype=np.float64))
-        group.create_dataset("stats_I_input_std", data=np.asarray(self.stats_i_std, dtype=np.float64))
+        group.create_dataset("stats_V_mean", data=stats_v_mean)
+        group.create_dataset("stats_V_std", data=stats_v_std)
+        group.create_dataset("stats_I_input_mean", data=stats_i_mean)
+        group.create_dataset("stats_I_input_std", data=stats_i_std)
 
         # These placeholders preserve the expected output contract for downstream readers.
         group.create_dataset("stats_I_AMPA_time_avg", data=np.zeros((self.n,), dtype=np.float64))
@@ -170,9 +214,58 @@ class Population:
         group.create_dataset("stats_IE_ratio", data=np.zeros((self.n,), dtype=np.float64))
         group.create_dataset("LFP_data", data=np.zeros((0, 0), dtype=np.float64))
 
+    def write_restart(self, group: h5py.Group, step_tot: int) -> None:
+        pop_group = group.create_group(f"pop{self.index}")
+        pop_group.create_dataset("neuron_model", data=np.asarray([0], dtype=np.int32))
+        pop_group.create_dataset("pop_ind", data=np.asarray([self.index], dtype=np.int32))
+        pop_group.create_dataset("N", data=np.asarray([self.n], dtype=np.int32))
+        pop_group.create_dataset("dt", data=np.asarray([self.dt], dtype=np.float64))
+        pop_group.create_dataset("step_tot", data=np.asarray([step_tot], dtype=np.int32))
+        pop_group.create_dataset("tau_ref", data=np.asarray([self.params.tau_ref], dtype=np.float64))
+        pop_group.create_dataset("Cm", data=np.asarray([self.params.cm], dtype=np.float64))
+        pop_group.create_dataset("V_rt", data=np.asarray([self.params.v_rt], dtype=np.float64))
+        pop_group.create_dataset("V_lk", data=np.asarray([self.params.v_lk], dtype=np.float64))
+        pop_group.create_dataset("V_th", data=np.asarray([self.params.v_th], dtype=np.float64))
+        pop_group.create_dataset("g_lk", data=np.asarray([self.params.g_lk], dtype=np.float64))
+
+        pop_group.create_dataset("V", data=self.v.detach().cpu().numpy().astype(np.float64))
+        pop_group.create_dataset("I_leak", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_input", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_AMPA", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_GABA", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_NMDA", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_GJ", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_ext", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("I_ext_mean", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("g_ext_mean", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("ref_steps", data=np.asarray([self.ref_steps], dtype=np.int32))
+        pop_group.create_dataset(
+            "ref_step_left",
+            data=self.ref_step_left.detach().cpu().numpy().astype(np.int32),
+        )
+        pop_group.create_dataset("I_K", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("dg_K_heter", data=np.zeros((self.n,), dtype=np.float64))
+        pop_group.create_dataset("V_ext", data=np.asarray([0.0], dtype=np.float64))
+        pop_group.create_dataset("spike_freq_adpt", data=np.asarray([0], dtype=np.int32))
+        pop_group.create_dataset("V_K", data=np.asarray([-80.0], dtype=np.float64))
+        pop_group.create_dataset("dg_K", data=np.asarray([0.0], dtype=np.float64))
+        pop_group.create_dataset("tau_K", data=np.asarray([1.0], dtype=np.float64))
+        pop_group.create_dataset("exp_K_step", data=np.asarray([1.0], dtype=np.float64))
+        pop_group.create_dataset("step_perturb", data=np.asarray([-1], dtype=np.int32))
+        pop_group.create_dataset("spike_removed", data=np.asarray([0], dtype=np.int32))
+        pop_group.create_dataset("my_seed", data=np.asarray([0], dtype=np.int32))
+
 
 class Synapse:
-    def __init__(self, cfg: SynapseConfig, dt: float, n_pre: int, n_post: int, device: torch.device) -> None:
+    def __init__(
+        self,
+        cfg: SynapseConfig,
+        dt: float,
+        n_pre: int,
+        n_post: int,
+        device: torch.device,
+        restart_state: SynapseRestartState | None = None,
+    ) -> None:
         self.index = cfg.index
         self.syn_type = cfg.syn_type
         self.pop_pre = cfg.pop_pre
@@ -181,6 +274,7 @@ class Synapse:
         self.device = device
 
         self.n_pre = n_pre
+        self.n_post = n_post
         self.pre_idx = torch.tensor(cfg.i, dtype=torch.int64, device=self.device)
         self.post_idx = torch.tensor(cfg.j, dtype=torch.int64, device=self.device)
         self.weight = torch.tensor(cfg.k, dtype=torch.float64, device=self.device)
@@ -196,18 +290,71 @@ class Synapse:
         max_delay = int(self.delay_steps.max().item()) if self.delay_steps.numel() else 0
         self.buffer_steps = max_delay + self.steps_trans + 1
         self.buffer = torch.zeros((self.buffer_steps, n_post), dtype=torch.float64, device=self.device)
+        self.buffer_flat = self.buffer.view(-1)
         self.gs_sum = torch.zeros((n_post,), dtype=torch.float64, device=self.device)
         # Model-0 state variables in C++ implementation.
         self.s_pre = torch.zeros((self.n_pre,), dtype=torch.float64, device=self.device)
         self.trans_left = torch.zeros((self.n_pre,), dtype=torch.int64, device=self.device)
+        self._zero_scalar = torch.zeros((), dtype=torch.float64, device=self.device)
 
-        self.edge_by_pre: list[torch.Tensor] = []
-        for pre in range(self.n_pre):
-            edge_ids = torch.nonzero(self.pre_idx == pre, as_tuple=False).reshape(-1)
-            self.edge_by_pre.append(edge_ids)
+        if restart_state is not None:
+            self._apply_restart_state(restart_state)
 
-        self.stats_i_mean: list[float] = []
-        self.stats_i_std: list[float] = []
+        if self.pre_idx.numel() > 0:
+            order = torch.argsort(self.pre_idx)
+            self.pre_idx_sorted = self.pre_idx[order]
+            self.post_idx_sorted = self.post_idx[order]
+            self.weight_sorted = self.weight[order]
+            self.delay_steps_sorted = self.delay_steps[order]
+            pre_counts = torch.bincount(self.pre_idx_sorted, minlength=self.n_pre)
+            self.pre_ptr = torch.zeros((self.n_pre + 1,), dtype=torch.int64, device=self.device)
+            self.pre_ptr[1:] = torch.cumsum(pre_counts, dim=0)
+        else:
+            self.pre_idx_sorted = self.pre_idx
+            self.post_idx_sorted = self.post_idx
+            self.weight_sorted = self.weight
+            self.delay_steps_sorted = self.delay_steps
+            self.pre_ptr = torch.zeros((self.n_pre + 1,), dtype=torch.int64, device=self.device)
+
+        self.stats_i_mean: list[torch.Tensor] = []
+        self.stats_i_std: list[torch.Tensor] = []
+
+    def _apply_restart_state(self, restart_state: SynapseRestartState) -> None:
+        if restart_state.gs_sum is not None:
+            gs_sum = np.asarray(restart_state.gs_sum, dtype=np.float64).reshape(-1)
+            if gs_sum.size != self.gs_sum.numel():
+                raise ValueError(
+                    f"Synapse {self.index}: restart gs_sum length {gs_sum.size} != N_post {self.gs_sum.numel()}"
+                )
+            self.gs_sum = torch.tensor(gs_sum, dtype=torch.float64, device=self.device)
+
+        if restart_state.d_gs_sum_buffer is not None:
+            buffer_arr = np.asarray(restart_state.d_gs_sum_buffer, dtype=np.float64)
+            if buffer_arr.ndim == 1:
+                buffer_arr = buffer_arr.reshape(1, -1)
+            if buffer_arr.shape[1] != self.gs_sum.numel():
+                raise ValueError(
+                    f"Synapse {self.index}: restart buffer width {buffer_arr.shape[1]} != N_post {self.gs_sum.numel()}"
+                )
+            self.buffer_steps = int(buffer_arr.shape[0])
+            self.buffer = torch.tensor(buffer_arr, dtype=torch.float64, device=self.device)
+            self.buffer_flat = self.buffer.view(-1)
+
+        if restart_state.s_pre is not None:
+            s_pre = np.asarray(restart_state.s_pre, dtype=np.float64).reshape(-1)
+            if s_pre.size != self.n_pre:
+                raise ValueError(
+                    f"Synapse {self.index}: restart s_pre length {s_pre.size} != N_pre {self.n_pre}"
+                )
+            self.s_pre = torch.tensor(s_pre, dtype=torch.float64, device=self.device)
+
+        if restart_state.trans_left is not None:
+            trans_left = np.asarray(restart_state.trans_left, dtype=np.int64).reshape(-1)
+            if trans_left.size != self.n_pre:
+                raise ValueError(
+                    f"Synapse {self.index}: restart trans_left length {trans_left.size} != N_pre {self.n_pre}"
+                )
+            self.trans_left = torch.tensor(trans_left, dtype=torch.int64, device=self.device)
 
     def _tau_rise(self) -> float:
         if self.syn_type == 0:
@@ -238,28 +385,39 @@ class Synapse:
 
         pre_spikes = populations[self.pop_pre].spikes_current
         if pre_spikes.numel() > 0:
-            for pre in pre_spikes.detach().cpu().tolist():
-                if pre < self.n_pre:
-                    self.trans_left[pre] += self.steps_trans
+            valid_spikes = pre_spikes[(pre_spikes >= 0) & (pre_spikes < self.n_pre)]
+            if valid_spikes.numel() > 0:
+                self.trans_left[valid_spikes] += self.steps_trans
 
         # Match C++ model-0 transmitter dynamics.
-        for i_pre in range(self.n_pre):
-            if int(self.trans_left[i_pre].item()) <= 0:
-                continue
+        active_pre = torch.nonzero(self.trans_left > 0, as_tuple=False).reshape(-1)
+        if active_pre.numel() > 0:
+            starts = self.pre_ptr[active_pre]
+            ends = self.pre_ptr[active_pre + 1]
+            lengths = ends - starts
+            has_edges = lengths > 0
 
-            edge_ids = self.edge_by_pre[i_pre]
-            if edge_ids.numel() > 0:
-                posts = self.post_idx[edge_ids]
-                delays = self.delay_steps[edge_ids]
-                values = self.weight[edge_ids] * (self.k_trans * (1.0 - self.s_pre[i_pre]))
-                unique_delays = torch.unique(delays)
-                for delay in unique_delays.detach().cpu().tolist():
-                    mask = delays == delay
-                    slot = int((step_current + int(delay)) % self.buffer_steps)
-                    self.buffer[slot].index_add_(0, posts[mask], values[mask])
+            if has_edges.any():
+                active_pre_edges = active_pre[has_edges]
+                starts = starts[has_edges]
+                lengths = lengths[has_edges]
 
-            self.trans_left[i_pre] -= 1
-            self.s_pre[i_pre] += self.k_trans * (1.0 - self.s_pre[i_pre])
+                cum_lengths = torch.cumsum(lengths, dim=0)
+                total_edges = int(cum_lengths[-1].item())
+
+                seg_start = torch.repeat_interleave(starts, lengths)
+                seg_base = torch.repeat_interleave(cum_lengths - lengths, lengths)
+                edge_pos = seg_start + (torch.arange(total_edges, device=self.device, dtype=torch.int64) - seg_base)
+                pre_for_edge = torch.repeat_interleave(active_pre_edges, lengths)
+
+                values = self.weight_sorted[edge_pos] * (self.k_trans * (1.0 - self.s_pre[pre_for_edge]))
+                posts = self.post_idx_sorted[edge_pos]
+                slots = (self.delay_steps_sorted[edge_pos] + step_current) % self.buffer_steps
+                flat_index = slots * self.n_post + posts
+                self.buffer_flat.index_add_(0, flat_index, values)
+
+            self.trans_left[active_pre] -= 1
+            self.s_pre[active_pre] += self.k_trans * (1.0 - self.s_pre[active_pre])
 
         self.s_pre *= self.exp_step_decay
 
@@ -272,8 +430,38 @@ class Synapse:
         current = self._calc_current(v_post)
         populations[self.pop_post].receive_current(current, self.pop_pre, self.syn_type)
 
-        self.stats_i_mean.append(float(current.mean().item()))
-        self.stats_i_std.append(float(current.std(unbiased=False).item()))
+        self.stats_i_mean.append(current.mean())
+        self.stats_i_std.append(current.std(unbiased=False) if current.numel() > 1 else self._zero_scalar)
+
+    def write_restart(self, group: h5py.Group, step_tot: int) -> None:
+        syn_group = group.create_group(f"syn{self.index}")
+        syn_group.create_dataset("dt", data=np.asarray([self.dt], dtype=np.float64))
+        syn_group.create_dataset("step_tot", data=np.asarray([step_tot], dtype=np.int32))
+        syn_group.create_dataset("pop_ind_pre", data=np.asarray([self.pop_pre], dtype=np.int32))
+        syn_group.create_dataset("pop_ind_post", data=np.asarray([self.pop_post], dtype=np.int32))
+        syn_group.create_dataset("N_pre", data=np.asarray([self.n_pre], dtype=np.int32))
+        syn_group.create_dataset("N_post", data=np.asarray([self.gs_sum.numel()], dtype=np.int32))
+        syn_group.create_dataset("syn_type", data=np.asarray([self.syn_type], dtype=np.int32))
+        syn_group.create_dataset("I", data=self.pre_idx.detach().cpu().numpy().astype(np.int32))
+        syn_group.create_dataset("J", data=self.post_idx.detach().cpu().numpy().astype(np.int32))
+        syn_group.create_dataset("K", data=self.weight.detach().cpu().numpy().astype(np.float64))
+        syn_group.create_dataset(
+            "D",
+            data=(self.delay_steps.detach().cpu().numpy().astype(np.float64) * float(self.dt)),
+        )
+        syn_group.create_dataset("gs_sum", data=self.gs_sum.detach().cpu().numpy().astype(np.float64))
+
+        gsm_group = syn_group.create_group("Gsm_0")
+        gsm_group.create_dataset("buffer_steps", data=np.asarray([self.buffer_steps], dtype=np.int32))
+        gsm_group.create_dataset("s", data=self.s_pre.detach().cpu().numpy().astype(np.float64))
+        gsm_group.create_dataset(
+            "trans_left",
+            data=self.trans_left.detach().cpu().numpy().astype(np.int32),
+        )
+        gsm_group.create_dataset(
+            "d_gs_sum_buffer",
+            data=self.buffer.detach().cpu().numpy().astype(np.float64),
+        )
 
     def write_results(self, group: h5py.Group) -> None:
         syn_para = (
@@ -282,10 +470,16 @@ class Synapse:
             f"syn_type,{self.syn_type},"
         )
         group.create_dataset("syn_para", data=np.asarray([syn_para], dtype=h5py.string_dtype("utf-8")))
-        group.create_dataset("stats_I_mean", data=np.asarray(self.stats_i_mean, dtype=np.float64))
-        group.create_dataset("stats_I_std", data=np.asarray(self.stats_i_std, dtype=np.float64))
+        if self.stats_i_mean:
+            stats_i_mean = torch.stack(self.stats_i_mean).detach().cpu().numpy().astype(np.float64)
+            stats_i_std = torch.stack(self.stats_i_std).detach().cpu().numpy().astype(np.float64)
+        else:
+            stats_i_mean = np.zeros((0,), dtype=np.float64)
+            stats_i_std = np.zeros((0,), dtype=np.float64)
+        group.create_dataset("stats_I_mean", data=stats_i_mean)
+        group.create_dataset("stats_I_std", data=stats_i_std)
         # ReadH5.m currently looks up stats_std by mistake; keep both names for compatibility.
-        group.create_dataset("stats_std", data=np.asarray(self.stats_i_std, dtype=np.float64))
+        group.create_dataset("stats_std", data=stats_i_std)
         group.create_dataset("stats_s_time_mean", data=np.zeros((0,), dtype=np.float64))
         group.create_dataset("stats_s_time_cov", data=np.zeros((0, 0), dtype=np.float64))
         group.create_dataset("stats_I_time_mean", data=np.zeros((0,), dtype=np.float64))
