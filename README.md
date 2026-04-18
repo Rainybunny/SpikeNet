@@ -4,6 +4,8 @@
          * [FAQ](#faq)
       * [Installing](#installing)
       * [Run the demo](#run-the-demo)
+        * [Python/C++ equivalence validation](#pythonc-equivalence-validation)
+        * [Python interface contract for python-matlab workflow](#python-interface-contract-for-python-matlab-workflow)
 * [High performance computing](#high-performance-computing)
 * [The workflow](#the-workflow)
 * [More details](#more-details)
@@ -103,6 +105,92 @@ PostProcessYG()
 d = dir('*RYG.mat')
 R = load(d(1).name)
 raster_plot(R,1)
+```
+
+## Python/C++ equivalence validation
+
+If you want to verify the Python migration against the original C++ simulator without relying on Matlab, use the built-in side-by-side checker:
+
+```
+cd SpikeNet
+bash scripts/run_equivalence.sh
+```
+
+The wrapper script auto-detects the C++ simulator at `./simulator` or `../simulator`.
+
+This checker will:
+1. Auto-generate deterministic HDF5 test inputs.
+2. Run both C++ and Python simulators on the same cases.
+3. Compare CLI signatures, output schema, and key time-series datasets.
+4. Generate a Markdown and JSON report under `reports/equivalence/`.
+
+Detailed guide: [documentation/python_cpp_equivalence_guide.md](documentation/python_cpp_equivalence_guide.md).
+
+The latest reports are:
+- `reports/equivalence/report.md`
+- `reports/equivalence/report.json`
+
+## Python interface contract for python-matlab workflow
+
+This section documents the Python-facing interfaces that are intentionally exposed for integration,
+their C++ counterparts, and the current implementation boundary.
+
+### Upstream interfaces (input side)
+
+| Usage | Python interface | C++ counterpart | Notes |
+|---|---|---|---|
+| Batch CLI run | `python -m spikenet_py.cli A_in.h5 B_in.h5 [--device cpu|cuda]` | `./simulator A_in.h5 B_in.h5` | Same multi-input contract and key CLI log markers. |
+| Single-file programmatic run | `from spikenet_py.runner import run_single_file` then `run_single_file(input_path, device="cpu")` | Process-level call to `./simulator input.h5` | Python adds a stable in-process API for workflow wrappers. |
+| Required HDF5 config paths | `/config/Net/INIT001/N`, `/config/Net/INIT002/dt`, `/config/Net/INIT002/step_tot` | Same | Missing required paths raise explicit load errors. |
+| Population optional config paths | `/config/pops/popX/PARA001/para_str_ascii`, `/config/pops/popX/SEED001/seed`, `/config/pops/popX/INIT011/{r_V0,p_fire}`, fallback `/config/pops/popX/INIT003/p_fire`, `/config/pops/popX/SETINITV/external_init_V` | Same | Deterministic initialization via `SETINITV` is supported. |
+| Synapse config paths | `/config/syns/n_syns`, `/config/syns/synY/INIT006/{type,i_pre,j_post,I,J,K,D}` | Same | Core AMPA/GABA/NMDA projection path is implemented. |
+
+### Downstream interfaces (output side)
+
+Python writes `*_out.h5` with the same top-level contract used by Matlab readers:
+
+| Output path family | Python status | C++ counterpart | Consumed by Matlab |
+|---|---|---|---|
+| `/config_filename/config_filename` | Implemented | Same | `ReadH5` |
+| `/run_away_killed/step` | Implemented | Same | `ReadH5` |
+| `/pop_result_i/spike_hist_tot`, `/num_spikes_pop`, `/num_ref_pop`, `/pop_para`, `/stats_*` | Implemented (core fields real; part of extended stats currently placeholder arrays) | Same paths | `ReadH5` + `AnalyseYG` |
+| `/syn_result_j/syn_para`, `/stats_I_mean`, `/stats_I_std`, `/stats_std`, `/stats_s_time_mean`, `/stats_s_time_cov`, `/stats_I_time_mean`, `/stats_I_time_var` | Implemented (core mean/std real; extended stats placeholders) | Same paths | `ReadH5` |
+
+Matlab workflow entry remains unchanged:
+1. Generate `*in.h5` via existing Matlab scripts.
+2. Run Python simulator instead of C++ simulator.
+3. Run `PostProcessYG()` to parse `*out.h5`.
+
+`PostProcessYG()` already routes `.h5` outputs through `ReadH5()`, and most non-core fields are read via `try_h5read`, so absent optional datasets do not hard-fail the pipeline.
+
+### Capability confirmation (current state)
+
+Conclusion: the current Python implementation can support a core python-matlab workflow without requiring developers to read C++ internals, but it is not full feature parity yet.
+
+Confirmed working scope:
+1. CLI compatibility for single and multiple input files.
+2. Core HDF5 input parsing and core output schema generation.
+3. Side-by-side equivalence checks against C++ for deterministic core cases (see `reports/equivalence/report.md`, 52/52 PASS).
+
+Known limitations (still require extension work if your workflow depends on them):
+1. Restart input files are not supported yet.
+2. External-noise synapse path (`pop_ind_pre < 0`) is intentionally deferred.
+3. Advanced plasticity/learning branches and full high-fidelity sampling outputs are not yet implemented.
+4. Existing PBS scripts are still C++-oriented and need a Python launcher variant for full HPC replacement.
+
+### Recommended integration commands
+
+Run simulation with Python interface:
+
+```bash
+cd SpikeNet
+python -m spikenet_py.cli /path/to/your_case_in.h5
+```
+
+Then run Matlab post-processing exactly as before:
+
+```matlab
+PostProcessYG()
 ```
 
 # High performance computing
