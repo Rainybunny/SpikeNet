@@ -139,7 +139,7 @@ their C++ counterparts, and the current implementation boundary.
 
 | Usage | Python interface | C++ counterpart | Notes |
 |---|---|---|---|
-| Batch CLI run | `python -m spikenet_py.cli A_in.h5 B_in.h5 [--device cpu|cuda]` | `./simulator A_in.h5 B_in.h5` | Same multi-input contract and key CLI log markers. |
+| Batch CLI run | `python -m spikenet_py.cli A_in.h5 B_in.h5 [--device cpu\|cuda]` | `./simulator A_in.h5 B_in.h5` | Same multi-input contract and key CLI log markers. |
 | Single-file programmatic run | `from spikenet_py.runner import run_single_file` then `run_single_file(input_path, device="cpu")` | Process-level call to `./simulator input.h5` | Python adds a stable in-process API for workflow wrappers. |
 | Required HDF5 config paths | `/config/Net/INIT001/N`, `/config/Net/INIT002/dt`, `/config/Net/INIT002/step_tot` | Same | Missing required paths raise explicit load errors. |
 | Population optional config paths | `/config/pops/popX/PARA001/para_str_ascii`, `/config/pops/popX/SEED001/seed`, `/config/pops/popX/INIT011/{r_V0,p_fire}`, fallback `/config/pops/popX/INIT003/p_fire`, `/config/pops/popX/SETINITV/external_init_V` | Same | Deterministic initialization via `SETINITV` is supported. |
