@@ -17,6 +17,9 @@ class PopulationConfig:
     init_r_v0: float | None = None
     init_p_fire: float | None = None
     init_v_external: np.ndarray | None = None
+    cov_time_start: int | None = None
+    cov_time_end: int | None = None
+    lfp_neurons: np.ndarray | None = None
 
 
 @dataclass
@@ -29,6 +32,8 @@ class SynapseConfig:
     j: np.ndarray
     k: np.ndarray
     d: np.ndarray
+    cov_time_start: int | None = None
+    cov_time_end: int | None = None
 
 
 @dataclass
@@ -141,6 +146,27 @@ def _load_standard_config_h5(path: Path, h5: h5py.File) -> SimulationConfig:
         if _has_path(h5, initv_path):
             pop_cfg.init_v_external = _read_vector(h5, initv_path, np.float64)
 
+        cov_start_path = f"{pop_root}/SAMP103/time_start"
+        cov_end_path = f"{pop_root}/SAMP103/time_end"
+        if _has_path(h5, cov_start_path) and _has_path(h5, cov_end_path):
+            pop_cfg.cov_time_start = _read_scalar(h5, cov_start_path, int)
+            pop_cfg.cov_time_end = _read_scalar(h5, cov_end_path, int)
+
+        lfp_path = f"{pop_root}/SAMP005/LFP_neurons"
+        if _has_path(h5, lfp_path):
+            lfp_neurons = _read_matrix(h5, lfp_path, np.float64)
+            if lfp_neurons.shape[1] == pop_size:
+                pass
+            elif lfp_neurons.shape[0] == pop_size:
+                lfp_neurons = lfp_neurons.T
+            elif lfp_neurons.size % pop_size == 0:
+                lfp_neurons = lfp_neurons.reshape(-1, pop_size)
+            else:
+                raise ValueError(
+                    f"Population {pop_index}: invalid SAMP005/LFP_neurons shape {lfp_neurons.shape} for N {pop_size}"
+                )
+            pop_cfg.lfp_neurons = lfp_neurons.astype(np.float64)
+
         populations.append(pop_cfg)
 
     synapses: list[SynapseConfig] = []
@@ -162,6 +188,16 @@ def _load_standard_config_h5(path: Path, h5: h5py.File) -> SimulationConfig:
                     j=_read_vector(h5, f"{init006_root}/J", np.int64),
                     k=_read_vector(h5, f"{init006_root}/K", np.float64),
                     d=_read_vector(h5, f"{init006_root}/D", np.float64),
+                    cov_time_start=(
+                        _read_scalar(h5, f"{syn_root}/SAMP104/time_start", int)
+                        if _has_path(h5, f"{syn_root}/SAMP104/time_start")
+                        else None
+                    ),
+                    cov_time_end=(
+                        _read_scalar(h5, f"{syn_root}/SAMP104/time_end", int)
+                        if _has_path(h5, f"{syn_root}/SAMP104/time_end")
+                        else None
+                    ),
                 )
             )
 

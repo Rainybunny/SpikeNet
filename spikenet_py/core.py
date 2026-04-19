@@ -84,6 +84,41 @@ class Population:
         self.stats_i_mean: list[torch.Tensor] = []
         self.stats_i_std: list[torch.Tensor] = []
 
+        self.stats_step_count = 0
+        self.i_ampa_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.i_nmda_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.i_gaba_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.i_ext_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.i_tot_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.i_tot_time_sq_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.v_time_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.v_time_sq_sum = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+
+        self.cov_record_enabled = False
+        self.cov_time_start = 0
+        self.cov_time_end = -1
+        self.v_cov_count = 0
+        self.v_cov_mean = torch.zeros((self.n,), dtype=torch.float64, device=self.device)
+        self.v_cov_m2 = torch.zeros((self.n, self.n), dtype=torch.float64, device=self.device)
+        if cfg.cov_time_start is not None and cfg.cov_time_end is not None and cfg.cov_time_end >= cfg.cov_time_start:
+            self.cov_record_enabled = True
+            self.cov_time_start = int(cfg.cov_time_start)
+            self.cov_time_end = int(cfg.cov_time_end)
+
+        self.lfp_record_enabled = False
+        self.lfp_weights: torch.Tensor | None = None
+        self.lfp_data_parts: list[torch.Tensor] = []
+        if cfg.lfp_neurons is not None:
+            lfp = np.asarray(cfg.lfp_neurons, dtype=np.float64)
+            if lfp.ndim == 1:
+                lfp = lfp.reshape(1, -1)
+            if lfp.shape[1] != self.n:
+                raise ValueError(
+                    f"Population {self.index}: SAMP005/LFP_neurons width {lfp.shape[1]} != N {self.n}"
+                )
+            self.lfp_record_enabled = True
+            self.lfp_weights = torch.tensor(lfp, dtype=torch.float64, device=self.device)
+
     def _apply_restart_state(self, restart_state: PopulationRestartState) -> None:
         v = np.asarray(restart_state.v, dtype=np.float64).reshape(-1)
         if v.size != self.n:
@@ -159,6 +194,28 @@ class Population:
         self.stats_i_mean.append(self.i_input.mean())
         self.stats_i_std.append(self.i_input.std(unbiased=True) if self.n > 1 else self._zero_scalar)
 
+        self.stats_step_count += 1
+        self.i_ampa_time_sum += self.i_ampa
+        self.i_nmda_time_sum += self.i_nmda
+        self.i_gaba_time_sum += self.i_gaba
+        self.i_ext_time_sum += self.i_ext
+        self.i_tot_time_sum += self.i_input
+        self.i_tot_time_sq_sum += self.i_input * self.i_input
+        self.v_time_sum += self.v
+        self.v_time_sq_sum += self.v * self.v
+
+        if self.lfp_record_enabled and self.lfp_weights is not None:
+            lfp_sample = torch.matmul(self.lfp_weights, torch.abs(self.i_ampa) + torch.abs(self.i_gaba))
+            self.lfp_data_parts.append(lfp_sample)
+
+        if self.cov_record_enabled and self.cov_time_start <= step_current <= self.cov_time_end:
+            self.v_cov_count += 1
+            count_f = float(self.v_cov_count)
+            delta = self.v - self.v_cov_mean
+            self.v_cov_mean += delta / count_f
+            delta2 = self.v - self.v_cov_mean
+            self.v_cov_m2 += torch.outer(delta, delta2)
+
     def pop_para_string(self) -> str:
         return (
             f"Cm,{self.params.cm},"
@@ -191,6 +248,58 @@ class Population:
             stats_i_mean = np.zeros((0,), dtype=np.float64)
             stats_i_std = np.zeros((0,), dtype=np.float64)
 
+        if self.stats_step_count > 0:
+            steps_f = float(self.stats_step_count)
+            stats_i_ampa_time_avg = (self.i_ampa_time_sum / steps_f).detach().cpu().numpy().astype(np.float64)
+            stats_i_nmda_time_avg = (self.i_nmda_time_sum / steps_f).detach().cpu().numpy().astype(np.float64)
+            stats_i_gaba_time_avg = (self.i_gaba_time_sum / steps_f).detach().cpu().numpy().astype(np.float64)
+            stats_i_ext_time_avg = (self.i_ext_time_sum / steps_f).detach().cpu().numpy().astype(np.float64)
+            stats_i_tot_time_mean_t = self.i_tot_time_sum / steps_f
+            stats_v_time_mean_t = self.v_time_sum / steps_f
+            stats_i_tot_time_mean = stats_i_tot_time_mean_t.detach().cpu().numpy().astype(np.float64)
+            stats_v_time_mean = stats_v_time_mean_t.detach().cpu().numpy().astype(np.float64)
+
+            if self.stats_step_count > 1:
+                denom = float(self.stats_step_count - 1)
+                n_f = float(self.stats_step_count)
+                i_tot_var_t = (self.i_tot_time_sq_sum - (self.i_tot_time_sum * self.i_tot_time_sum) / n_f) / denom
+                v_var_t = (self.v_time_sq_sum - (self.v_time_sum * self.v_time_sum) / n_f) / denom
+                i_tot_var_t = torch.clamp(i_tot_var_t, min=0.0)
+                v_var_t = torch.clamp(v_var_t, min=0.0)
+                stats_i_tot_time_var = i_tot_var_t.detach().cpu().numpy().astype(np.float64)
+                stats_v_time_var = v_var_t.detach().cpu().numpy().astype(np.float64)
+            else:
+                stats_i_tot_time_var = np.zeros((self.n,), dtype=np.float64)
+                stats_v_time_var = np.zeros((self.n,), dtype=np.float64)
+
+            ie_denom = stats_i_ampa_time_avg + stats_i_nmda_time_avg + stats_i_ext_time_avg
+            stats_ie_ratio = np.divide(
+                stats_i_gaba_time_avg,
+                ie_denom,
+                out=np.zeros_like(stats_i_gaba_time_avg),
+                where=np.abs(ie_denom) > 1e-12,
+            )
+        else:
+            stats_i_ampa_time_avg = np.zeros((self.n,), dtype=np.float64)
+            stats_i_nmda_time_avg = np.zeros((self.n,), dtype=np.float64)
+            stats_i_gaba_time_avg = np.zeros((self.n,), dtype=np.float64)
+            stats_i_ext_time_avg = np.zeros((self.n,), dtype=np.float64)
+            stats_i_tot_time_mean = np.zeros((self.n,), dtype=np.float64)
+            stats_i_tot_time_var = np.zeros((self.n,), dtype=np.float64)
+            stats_v_time_mean = np.zeros((self.n,), dtype=np.float64)
+            stats_v_time_var = np.zeros((self.n,), dtype=np.float64)
+            stats_ie_ratio = np.zeros((self.n,), dtype=np.float64)
+
+        if self.cov_record_enabled and self.v_cov_count > 1:
+            stats_v_time_cov = (self.v_cov_m2 / float(self.v_cov_count - 1)).detach().cpu().numpy().astype(np.float64)
+        else:
+            stats_v_time_cov = np.zeros((self.n, self.n), dtype=np.float64)
+
+        if self.lfp_record_enabled and self.lfp_data_parts:
+            lfp_data = torch.stack(self.lfp_data_parts, dim=1).detach().cpu().numpy().astype(np.float64)
+        else:
+            lfp_data = np.zeros((0, 0), dtype=np.float64)
+
         group.create_dataset("spike_hist_tot", data=spike_hist_tot)
         group.create_dataset("num_spikes_pop", data=np.asarray(self.num_spikes_pop, dtype=np.int32))
         group.create_dataset("num_ref_pop", data=num_ref_pop)
@@ -201,18 +310,17 @@ class Population:
         group.create_dataset("stats_I_input_mean", data=stats_i_mean)
         group.create_dataset("stats_I_input_std", data=stats_i_std)
 
-        # These placeholders preserve the expected output contract for downstream readers.
-        group.create_dataset("stats_I_AMPA_time_avg", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_I_NMDA_time_avg", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_I_GABA_time_avg", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_I_ext_time_avg", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_I_tot_time_mean", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_I_tot_time_var", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_V_time_mean", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_V_time_cov", data=np.zeros((self.n, self.n), dtype=np.float64))
-        group.create_dataset("stats_V_time_var", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("stats_IE_ratio", data=np.zeros((self.n,), dtype=np.float64))
-        group.create_dataset("LFP_data", data=np.zeros((0, 0), dtype=np.float64))
+        group.create_dataset("stats_I_AMPA_time_avg", data=stats_i_ampa_time_avg)
+        group.create_dataset("stats_I_NMDA_time_avg", data=stats_i_nmda_time_avg)
+        group.create_dataset("stats_I_GABA_time_avg", data=stats_i_gaba_time_avg)
+        group.create_dataset("stats_I_ext_time_avg", data=stats_i_ext_time_avg)
+        group.create_dataset("stats_I_tot_time_mean", data=stats_i_tot_time_mean)
+        group.create_dataset("stats_I_tot_time_var", data=stats_i_tot_time_var)
+        group.create_dataset("stats_V_time_mean", data=stats_v_time_mean)
+        group.create_dataset("stats_V_time_cov", data=stats_v_time_cov)
+        group.create_dataset("stats_V_time_var", data=stats_v_time_var)
+        group.create_dataset("stats_IE_ratio", data=stats_ie_ratio)
+        group.create_dataset("LFP_data", data=lfp_data)
 
     def write_restart(self, group: h5py.Group, step_tot: int) -> None:
         pop_group = group.create_group(f"pop{self.index}")
@@ -318,6 +426,22 @@ class Synapse:
 
         self.stats_i_mean: list[torch.Tensor] = []
         self.stats_i_std: list[torch.Tensor] = []
+        self.stats_step_count = 0
+        self.s_time_sum = torch.zeros((self.n_pre,), dtype=torch.float64, device=self.device)
+        self.s_time_sq_sum = torch.zeros((self.n_pre,), dtype=torch.float64, device=self.device)
+        self.i_time_sum = torch.zeros((self.n_post,), dtype=torch.float64, device=self.device)
+        self.i_time_sq_sum = torch.zeros((self.n_post,), dtype=torch.float64, device=self.device)
+
+        self.cov_record_enabled = False
+        self.cov_time_start = 0
+        self.cov_time_end = -1
+        self.s_cov_count = 0
+        self.s_cov_mean = torch.zeros((self.n_pre,), dtype=torch.float64, device=self.device)
+        self.s_cov_m2 = torch.zeros((self.n_pre, self.n_pre), dtype=torch.float64, device=self.device)
+        if cfg.cov_time_start is not None and cfg.cov_time_end is not None and cfg.cov_time_end >= cfg.cov_time_start:
+            self.cov_record_enabled = True
+            self.cov_time_start = int(cfg.cov_time_start)
+            self.cov_time_end = int(cfg.cov_time_end)
 
     def _apply_restart_state(self, restart_state: SynapseRestartState) -> None:
         if restart_state.gs_sum is not None:
@@ -432,6 +556,19 @@ class Synapse:
 
         self.stats_i_mean.append(current.mean())
         self.stats_i_std.append(current.std(unbiased=False) if current.numel() > 1 else self._zero_scalar)
+        self.stats_step_count += 1
+        self.s_time_sum += self.s_pre
+        self.s_time_sq_sum += self.s_pre * self.s_pre
+        self.i_time_sum += current
+        self.i_time_sq_sum += current * current
+
+        if self.cov_record_enabled and self.cov_time_start <= step_current <= self.cov_time_end:
+            self.s_cov_count += 1
+            count_f = float(self.s_cov_count)
+            delta = self.s_pre - self.s_cov_mean
+            self.s_cov_mean += delta / count_f
+            delta2 = self.s_pre - self.s_cov_mean
+            self.s_cov_m2 += torch.outer(delta, delta2)
 
     def write_restart(self, group: h5py.Group, step_tot: int) -> None:
         syn_group = group.create_group(f"syn{self.index}")
@@ -476,11 +613,38 @@ class Synapse:
         else:
             stats_i_mean = np.zeros((0,), dtype=np.float64)
             stats_i_std = np.zeros((0,), dtype=np.float64)
+
+        if self.stats_step_count > 0:
+            steps_f = float(self.stats_step_count)
+            s_time_mean_t = self.s_time_sum / steps_f
+            i_time_mean_t = self.i_time_sum / steps_f
+            stats_s_time_mean = s_time_mean_t.detach().cpu().numpy().astype(np.float64)
+            stats_i_time_mean = i_time_mean_t.detach().cpu().numpy().astype(np.float64)
+
+            if self.stats_step_count > 1:
+                denom = float(self.stats_step_count - 1)
+                n_f = float(self.stats_step_count)
+                i_time_var_t = (self.i_time_sq_sum - (self.i_time_sum * self.i_time_sum) / n_f) / denom
+                i_time_var_t = torch.clamp(i_time_var_t, min=0.0)
+                stats_i_time_var = i_time_var_t.detach().cpu().numpy().astype(np.float64)
+            else:
+                stats_i_time_var = np.zeros((self.n_post,), dtype=np.float64)
+        else:
+            stats_s_time_mean = np.zeros((self.n_pre,), dtype=np.float64)
+            stats_i_time_mean = np.zeros((self.n_post,), dtype=np.float64)
+            stats_i_time_var = np.zeros((self.n_post,), dtype=np.float64)
+
+        if self.cov_record_enabled and self.s_cov_count > 1:
+            stats_s_time_cov = (self.s_cov_m2 / float(self.s_cov_count - 1)).detach().cpu().numpy().astype(np.float64)
+        elif self.cov_record_enabled:
+            stats_s_time_cov = np.zeros((self.n_pre, self.n_pre), dtype=np.float64)
+        else:
+            stats_s_time_cov = np.zeros((0, 0), dtype=np.float64)
         group.create_dataset("stats_I_mean", data=stats_i_mean)
         group.create_dataset("stats_I_std", data=stats_i_std)
         # ReadH5.m currently looks up stats_std by mistake; keep both names for compatibility.
         group.create_dataset("stats_std", data=stats_i_std)
-        group.create_dataset("stats_s_time_mean", data=np.zeros((0,), dtype=np.float64))
-        group.create_dataset("stats_s_time_cov", data=np.zeros((0, 0), dtype=np.float64))
-        group.create_dataset("stats_I_time_mean", data=np.zeros((0,), dtype=np.float64))
-        group.create_dataset("stats_I_time_var", data=np.zeros((0,), dtype=np.float64))
+        group.create_dataset("stats_s_time_mean", data=stats_s_time_mean)
+        group.create_dataset("stats_s_time_cov", data=stats_s_time_cov)
+        group.create_dataset("stats_I_time_mean", data=stats_i_time_mean)
+        group.create_dataset("stats_I_time_var", data=stats_i_time_var)

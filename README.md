@@ -142,8 +142,8 @@ their C++ counterparts, and the current implementation boundary.
 | Batch CLI run | `python -m spikenet_py.cli A_in.h5 B_in.h5 [--device cpu\|cuda]` | `./simulator A_in.h5 B_in.h5` | Same multi-input contract and key CLI log markers. |
 | Single-file programmatic run | `from spikenet_py.runner import run_single_file` then `run_single_file(input_path, device="cpu")` | Process-level call to `./simulator input.h5` | Python adds a stable in-process API for workflow wrappers. |
 | Required HDF5 config paths | `/config/Net/INIT001/N`, `/config/Net/INIT002/dt`, `/config/Net/INIT002/step_tot` | Same | Missing required paths raise explicit load errors. |
-| Population optional config paths | `/config/pops/popX/PARA001/para_str_ascii`, `/config/pops/popX/SEED001/seed`, `/config/pops/popX/INIT011/{r_V0,p_fire}`, fallback `/config/pops/popX/INIT003/p_fire`, `/config/pops/popX/SETINITV/external_init_V` | Same | Deterministic initialization via `SETINITV` is supported. |
-| Synapse config paths | `/config/syns/n_syns`, `/config/syns/synY/INIT006/{type,i_pre,j_post,I,J,K,D}` | Same | Core AMPA/GABA/NMDA projection path is implemented. |
+| Population optional config paths | `/config/pops/popX/PARA001/para_str_ascii`, `/config/pops/popX/SEED001/seed`, `/config/pops/popX/INIT011/{r_V0,p_fire}`, fallback `/config/pops/popX/INIT003/p_fire`, `/config/pops/popX/SETINITV/external_init_V`, `/config/pops/popX/SAMP103/{time_start,time_end}`, `/config/pops/popX/SAMP005/LFP_neurons` | Same | Deterministic initialization via `SETINITV`; covariance/LFP recording is enabled when corresponding `SAMP*` paths are present. |
+| Synapse config paths | `/config/syns/n_syns`, `/config/syns/synY/INIT006/{type,i_pre,j_post,I,J,K,D}`, `/config/syns/synY/SAMP104/{time_start,time_end}` | Same | Core AMPA/GABA/NMDA projection path is implemented; synaptic covariance recording is enabled by `SAMP104`. |
 
 ### Downstream interfaces (output side)
 
@@ -153,8 +153,8 @@ Python writes `*_out.h5` with the same top-level contract used by Matlab readers
 |---|---|---|---|
 | `/config_filename/config_filename` | Implemented | Same | `ReadH5` |
 | `/run_away_killed/step` | Implemented | Same | `ReadH5` |
-| `/pop_result_i/spike_hist_tot`, `/num_spikes_pop`, `/num_ref_pop`, `/pop_para`, `/stats_*` | Implemented (core fields real; part of extended stats currently placeholder arrays) | Same paths | `ReadH5` + `AnalyseYG` |
-| `/syn_result_j/syn_para`, `/stats_I_mean`, `/stats_I_std`, `/stats_std`, `/stats_s_time_mean`, `/stats_s_time_cov`, `/stats_I_time_mean`, `/stats_I_time_var` | Implemented (core mean/std real; extended stats placeholders) | Same paths | `ReadH5` |
+| `/pop_result_i/spike_hist_tot`, `/num_spikes_pop`, `/num_ref_pop`, `/pop_para`, `/stats_*` | Implemented (core + extended per-neuron time avg/mean/var, IE-ratio, voltage covariance, and LFP traces are real; covariance/LFP depend on `SAMP103`/`SAMP005` config presence) | Same paths | `ReadH5` + `AnalyseYG` |
+| `/syn_result_j/syn_para`, `/stats_I_mean`, `/stats_I_std`, `/stats_std`, `/stats_s_time_mean`, `/stats_s_time_cov`, `/stats_I_time_mean`, `/stats_I_time_var` | Implemented (`stats_s_time_mean`, `stats_I_time_mean`, `stats_I_time_var`, and `stats_s_time_cov` are real; covariance depends on `SAMP104` config presence) | Same paths | `ReadH5` |
 
 Matlab workflow entry remains unchanged:
 1. Generate `*in.h5` via existing Matlab scripts.
